@@ -1,6 +1,6 @@
 {
   "name": "pi-rename-pane",
-  "version": "0.4.2-pane.0",
+  "version": "0.1.0",
   "description": "Generate pi session names and rename the current Herdr pane.",
   "keywords": [
     "herdr",
