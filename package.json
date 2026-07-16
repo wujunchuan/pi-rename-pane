@@ -1,0 +1,44 @@
+{
+  "name": "pi-rename-pane",
+  "version": "0.4.2-pane.0",
+  "description": "Generate pi session names and rename the current Herdr pane.",
+  "keywords": [
+    "herdr",
+    "pi",
+    "pi-extension",
+    "pi-package",
+    "rename",
+    "session",
+    "pane"
+  ],
+  "homepage": "https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-rename#readme",
+  "bugs": "https://github.com/tifandotme/pi-extensions/issues",
+  "license": "MIT",
+  "author": "Tifan Dwi Avianto <hi@tifan.me>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tifandotme/pi-extensions.git",
+    "directory": "packages/pi-rename"
+  },
+  "files": [
+    "src/**/*.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    "./naming": "./src/naming.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}
