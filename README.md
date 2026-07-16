@@ -2,10 +2,20 @@
 
 Generate session names for pi and rename the current Herdr pane.
 
+Forked from `@tifan/pi-rename`; this variant renames Herdr panes instead of tabs.
+
 ## Install
 
+From npm:
+
 ```bash
-pi install /Users/john/Project/Github/pi-rename-pane
+pi install npm:pi-rename-pane
+```
+
+From GitHub:
+
+```bash
+pi install git:github.com/wujunchuan/pi-rename-pane
 ```
 
 For local development:

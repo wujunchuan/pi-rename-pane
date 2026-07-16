@@ -11,14 +11,15 @@
     "session",
     "pane"
   ],
-  "homepage": "https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-rename#readme",
-  "bugs": "https://github.com/tifandotme/pi-extensions/issues",
+  "homepage": "https://github.com/wujunchuan/pi-rename-pane#readme",
+  "bugs": {
+    "url": "https://github.com/wujunchuan/pi-rename-pane/issues"
+  },
   "license": "MIT",
   "author": "Tifan Dwi Avianto <hi@tifan.me>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tifandotme/pi-extensions.git",
-    "directory": "packages/pi-rename"
+    "url": "git+https://github.com/wujunchuan/pi-rename-pane.git"
   },
   "files": [
     "src/**/*.ts",
@@ -30,8 +31,7 @@
     "./naming": "./src/naming.ts"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "engines": {
     "node": ">=20"
@@ -40,5 +40,11 @@
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": "*",
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   }
 }
