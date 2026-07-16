@@ -28,6 +28,11 @@ interface SessionContextReader {
 
 interface RenameState {
   modelConfig: RenameModelConfig
+  autoRenameCompleted: boolean
+  autoRenameInFlight: boolean
+  manualNameLocked: boolean
+  pendingExtensionSessionName?: string
+  lastExtensionSessionName?: string
 }
 
 const RENAME_SUBCOMMANDS: AutocompleteItem[] = [
@@ -51,6 +56,9 @@ const RENAME_SUBCOMMANDS: AutocompleteItem[] = [
 function createRenameState(): RenameState {
   return {
     modelConfig: { kind: "missing" },
+    autoRenameCompleted: false,
+    autoRenameInFlight: false,
+    manualNameLocked: false,
   }
 }
 
@@ -135,9 +143,57 @@ function getCurrentSessionMessages(ctx: ExtensionContext): AgentMessage[] {
   ).messages
 }
 
-async function applyRename(pi: ExtensionAPI, name: string): Promise<boolean> {
+type HerdrRenameMode = "always" | "if-default"
+
+function resetSessionRenameState(
+  state: RenameState,
+  existingSessionName: string | undefined,
+): void {
+  state.autoRenameCompleted = Boolean(existingSessionName?.trim())
+  state.autoRenameInFlight = false
+  state.manualNameLocked = false
+  state.pendingExtensionSessionName = undefined
+  state.lastExtensionSessionName = undefined
+}
+
+function markExtensionSessionNameChange(
+  state: RenameState,
+  name: string,
+): void {
+  state.autoRenameCompleted = true
+  state.pendingExtensionSessionName = name
+  state.lastExtensionSessionName = name
+}
+
+function recordSessionNameChange(
+  state: RenameState,
+  name: string | undefined,
+): void {
+  const normalizedName = name?.trim() || undefined
+
+  if (state.pendingExtensionSessionName !== undefined) {
+    const pendingName = state.pendingExtensionSessionName
+    state.pendingExtensionSessionName = undefined
+    if (normalizedName === pendingName) return
+  }
+
+  if (normalizedName === state.lastExtensionSessionName) return
+
+  state.manualNameLocked = true
+  state.autoRenameCompleted = true
+}
+
+async function applyRename(
+  pi: ExtensionAPI,
+  state: RenameState,
+  name: string,
+  herdrMode: HerdrRenameMode = "always",
+): Promise<boolean> {
+  markExtensionSessionNameChange(state, name)
   pi.setSessionName(name)
-  return renameCurrentHerdrPane(name)
+  return herdrMode === "if-default"
+    ? renameCurrentHerdrPaneIfDefault(name)
+    : renameCurrentHerdrPane(name)
 }
 
 async function runRenameCommand(
@@ -161,7 +217,7 @@ async function runRenameCommand(
   let herdrError: string | undefined
 
   try {
-    renamedHerdr = await applyRename(pi, result.name)
+    renamedHerdr = await applyRename(pi, state, result.name)
   } catch (error) {
     herdrError = error instanceof Error ? error.message : String(error)
   }
@@ -266,6 +322,13 @@ async function notifyRenameStatus(
   const context = getUserMessageContext(getCurrentSessionMessages(ctx))
   const herdrLine = `herdr pane: ${getCurrentHerdrPaneId() ? "available" : "unavailable"}`
   const contextLine = `context: ${context?.count ?? 0} user messages`
+  const autoRenameLine = state.manualNameLocked
+    ? "auto rename: skipped (manual /name detected)"
+    : state.autoRenameInFlight
+      ? "auto rename: running"
+      : state.autoRenameCompleted
+        ? "auto rename: done"
+        : "auto rename: pending first response"
 
   ctx.ui.notify(
     [
@@ -274,9 +337,80 @@ async function notifyRenameStatus(
       activeModelLine,
       herdrLine,
       contextLine,
+      autoRenameLine,
     ].join("\n"),
     "info",
   )
+}
+
+async function runAutoRenameOnce(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  state: RenameState,
+): Promise<void> {
+  if (
+    state.autoRenameCompleted ||
+    state.autoRenameInFlight ||
+    state.manualNameLocked
+  ) {
+    return
+  }
+
+  if (pi.getSessionName()?.trim()) {
+    state.autoRenameCompleted = true
+    return
+  }
+
+  const context = getUserMessageContext(getCurrentSessionMessages(ctx))
+  if (!context) return
+
+  state.autoRenameCompleted = true
+  state.autoRenameInFlight = true
+
+  try {
+    const result = await generateRename(ctx, state.modelConfig, context)
+    if (!result) return
+
+    if (state.manualNameLocked || pi.getSessionName()?.trim()) return
+
+    let renamedHerdr = false
+    let herdrError: string | undefined
+
+    try {
+      renamedHerdr = await applyRename(pi, state, result.name, "if-default")
+    } catch (error) {
+      herdrError = error instanceof Error ? error.message : String(error)
+    }
+
+    if (result.source === "fallback") {
+      ctx.ui.notify(
+        [
+          `Session auto-renamed with fallback: ${result.name}`,
+          `Could not use rename model: ${result.reason}`,
+          ...(herdrError ? [`Herdr pane rename failed: ${herdrError}`] : []),
+        ].join("\n"),
+        "warning",
+      )
+      return
+    }
+
+    if (herdrError) {
+      ctx.ui.notify(
+        `Session auto-renamed, but Herdr pane rename failed: ${herdrError}`,
+        "warning",
+      )
+      return
+    }
+
+    ctx.ui.notify(
+      renamedHerdr
+        ? `Session and Herdr pane auto-renamed: ${result.name}`
+        : `Session auto-renamed: ${result.name}`,
+      "info",
+    )
+  } finally {
+    state.autoRenameInFlight = false
+  }
 }
 
 function registerRenameCommand(pi: ExtensionAPI, state: RenameState): void {
@@ -325,10 +459,19 @@ export default function (pi: ExtensionAPI): void {
 
   registerRenameCommand(pi, state)
 
+  pi.on("session_info_changed", (event) => {
+    recordSessionNameChange(state, event.name)
+  })
+
+  pi.on("agent_settled", async (_event, ctx) => {
+    await runAutoRenameOnce(pi, ctx, state)
+  })
+
   pi.on("session_start", async () => {
     state.modelConfig = resolveInitialModelConfig()
 
     const sessionName = pi.getSessionName()?.trim()
+    resetSessionRenameState(state, sessionName)
     if (!sessionName) return
 
     try {

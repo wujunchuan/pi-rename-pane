@@ -26,13 +26,15 @@ pi install /Users/john/Project/Github/pi-rename-pane
 
 ## How it works
 
-Run `/rename` to generate a fresh hyphen-separated session name. The extension applies the name to the pi session and, when pi is running inside Herdr, to the current Herdr pane.
+After the first agent response in an unnamed session, the extension automatically generates one hyphen-separated session name. If you set a name yourself with pi's built-in `/name` before that happens, automatic rename is skipped and your manual name is left untouched.
+
+Run `/rename` any time to generate a fresh name manually. The extension applies the name to the pi session and, when pi is running inside Herdr, to the current Herdr pane.
 
 When a named session starts or resumes in Herdr, the extension also applies the saved pi session name to the current pane if that pane does not already have a manual Herdr label.
 
 `/rename` builds naming context from the first user message plus up to three latest user messages. It ignores assistant replies, tool output, and attachments. Before sending context to the rename model, it redacts common secrets.
 
-If the rename model is unavailable, `/rename` falls back to a local name from the latest user message.
+If the rename model is unavailable, automatic rename and `/rename` fall back to a local name from the latest user message.
 
 ## Commands
 
@@ -41,7 +43,7 @@ If the rename model is unavailable, `/rename` falls back to a local name from th
 - `/rename config`: Choose a rename model.
 - `/rename help`: List rename commands.
 
-Manual names are not supported. Use pi's built-in `/name` command when you want an exact name.
+Manual names are not supported by `/rename`. Use pi's built-in `/name` command when you want an exact name; automatic rename will not overwrite it.
 
 ## Configuration
 
@@ -63,7 +65,7 @@ You can also edit `~/.config/pi/extensions/pi-rename.json` manually:
 
 The extension uses `HERDR_PANE_ID` to find and rename the current Herdr pane with `herdr pane rename`.
 
-On session startup or resume, it only auto-renames panes that do not already have a manual Herdr pane label. It does not overwrite custom Herdr pane labels during startup.
+On session startup, resume, or first-response automatic rename, it only auto-renames panes that do not already have a manual Herdr pane label. It does not overwrite custom Herdr pane labels during those automatic flows.
 
 On quit, the Herdr pane keeps the last session name.
 
