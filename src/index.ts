@@ -30,6 +30,7 @@ interface RenameState {
   modelConfig: RenameModelConfig
   autoRenameCompleted: boolean
   autoRenameInFlight: boolean
+  autoRenameAllowExistingName: boolean
   manualNameLocked: boolean
   pendingExtensionSessionName?: string
   lastExtensionSessionName?: string
@@ -58,6 +59,7 @@ function createRenameState(): RenameState {
     modelConfig: { kind: "missing" },
     autoRenameCompleted: false,
     autoRenameInFlight: false,
+    autoRenameAllowExistingName: false,
     manualNameLocked: false,
   }
 }
@@ -148,9 +150,13 @@ type HerdrRenameMode = "always" | "if-default"
 function resetSessionRenameState(
   state: RenameState,
   existingSessionName: string | undefined,
+  options: { allowExistingName: boolean },
 ): void {
-  state.autoRenameCompleted = Boolean(existingSessionName?.trim())
+  state.autoRenameCompleted = options.allowExistingName
+    ? false
+    : Boolean(existingSessionName?.trim())
   state.autoRenameInFlight = false
+  state.autoRenameAllowExistingName = options.allowExistingName
   state.manualNameLocked = false
   state.pendingExtensionSessionName = undefined
   state.lastExtensionSessionName = undefined
@@ -328,7 +334,9 @@ async function notifyRenameStatus(
       ? "auto rename: running"
       : state.autoRenameCompleted
         ? "auto rename: done"
-        : "auto rename: pending first response"
+        : state.autoRenameAllowExistingName
+          ? "auto rename: pending (may overwrite existing session name)"
+          : "auto rename: pending first response"
 
   ctx.ui.notify(
     [
@@ -356,7 +364,7 @@ async function runAutoRenameOnce(
     return
   }
 
-  if (pi.getSessionName()?.trim()) {
+  if (!state.autoRenameAllowExistingName && pi.getSessionName()?.trim()) {
     state.autoRenameCompleted = true
     return
   }
@@ -371,13 +379,23 @@ async function runAutoRenameOnce(
     const result = await generateRename(ctx, state.modelConfig, context)
     if (!result) return
 
-    if (state.manualNameLocked || pi.getSessionName()?.trim()) return
+    if (
+      state.manualNameLocked ||
+      (!state.autoRenameAllowExistingName && pi.getSessionName()?.trim())
+    ) {
+      return
+    }
 
     let renamedHerdr = false
     let herdrError: string | undefined
 
     try {
-      renamedHerdr = await applyRename(pi, state, result.name, "if-default")
+      renamedHerdr = await applyRename(
+        pi,
+        state,
+        result.name,
+        state.autoRenameAllowExistingName ? "always" : "if-default",
+      )
     } catch (error) {
       herdrError = error instanceof Error ? error.message : String(error)
     }
@@ -467,15 +485,24 @@ export default function (pi: ExtensionAPI): void {
     await runAutoRenameOnce(pi, ctx, state)
   })
 
-  pi.on("session_start", async () => {
+  pi.on("session_start", async (event, ctx) => {
     state.modelConfig = resolveInitialModelConfig()
 
+    const allowExistingName = event.reason === "new" || event.reason === "resume"
     const sessionName = pi.getSessionName()?.trim()
-    resetSessionRenameState(state, sessionName)
-    if (!sessionName) return
+    resetSessionRenameState(state, sessionName, { allowExistingName })
+
+    if (event.reason === "resume") {
+      await runAutoRenameOnce(pi, ctx, state)
+    }
+
+    const currentSessionName = pi.getSessionName()?.trim()
+    if (!currentSessionName || (allowExistingName && !state.autoRenameCompleted)) {
+      return
+    }
 
     try {
-      await renameCurrentHerdrPaneIfDefault(sessionName)
+      await renameCurrentHerdrPaneIfDefault(currentSessionName)
     } catch {
       // Keep session startup quiet if Herdr is unavailable or rejects the rename.
     }
